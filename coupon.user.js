@@ -9,6 +9,8 @@
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=catwar.su
 // @license      MIT
 // @grant        none
+// @updateURL    https://raw.githubusercontent.com/Achterstem/CW-Coupon-Helper/main/coupon.user.js
+// @downloadURL  https://raw.githubusercontent.com/Achterstem/CW-Coupon-Helper/main/coupon.user.js
 // @run-at       document-end
 // ==/UserScript==
 
