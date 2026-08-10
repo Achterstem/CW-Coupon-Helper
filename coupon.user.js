@@ -54,6 +54,15 @@
         return m && ms[m[2].toLowerCase()] != null ? new Date(m[3], ms[m[2].toLowerCase()], m[1], m[4]||0, m[5]||0).getTime() : null;
     };
 
+    const getDaysText = t => {
+        if (t.includes('бессрочно')) return 'Бессрочно';
+        let m = t.match(/(\d+)\s*(?:дн[еахй]*|сутк[ами]*)/i);
+        if (m) return `${m[1]} дн.`;
+        let h = t.match(/(\d+)\s*ч(?:ас[аов]*)?/i);
+        if (h) return `${h[1]} ч.`;
+        return '';
+    };
+
     const render = () => {
         let el = document.querySelector('#coupons'), groups = {};
         if (!el) return;
@@ -74,9 +83,14 @@
                 .cw-title-text { cursor: pointer; }
                 .cw-copy-btn { background: #312f2a; border: none; cursor: pointer; padding: 4px 6px; border-radius: 4px; display: inline-flex; align-items: center; color: #fff; vertical-align: middle; }
                 .cw-tooltip { margin-left: 2px; font-size: 12px; color: #312f2a; background: #dcd9ce; padding: 2px 6px; border-radius: 4px; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; font-weight: normal; }
-                .cw-gal { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding-bottom: 10px; border-bottom: 1px dashed #979181 }
-                .cw-box { position: relative; width: 100px; height: 150px }
+                .cw-gal { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; padding-bottom: 10px; border-bottom: 1px dashed #979181 }
+                .cw-gal-item { display: flex; flex-direction: column; align-items: center; width: 100px; gap: 4px; }
+                .cw-box { position: relative; width: 100px; height: 130px }
                 .cw-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none }
+                .cw-days { font-size: 11px; font-weight: bold; color: #312f2a; text-align: center; white-space: nowrap; }
+                .cw-price-input { width: 100%; box-sizing: border-box; padding: 3px 6px; font-size: 11px; border: none !important; border-radius: 8px; background: #312f2a !important; color: #fff !important; text-align: center; outline: none !important; box-shadow: none !important; }
+                .cw-price-input:hover, .cw-price-input:focus, .cw-price-input:active { border: none !important; outline: none !important; box-shadow: none !important; background: #312f2a !important; color: #fff !important; }
+                .cw-price-input::placeholder { color: #aaa; font-style: italic; }
                 .cw-list hr { border: none; border-top: 1px solid #979181; margin: 4px 0 6px }
                 .cw-lbl { cursor: pointer; display: inline-flex; align-items: center; color: #000 }
             </style>`);
@@ -116,8 +130,24 @@
                 return na.localeCompare(nb) || (getEnd(ta) || Infinity) - (getEnd(tb) || Infinity);
             });
 
-            let imgs = items.map(c => c.querySelector('a[href*=".png"]')?.href).filter(Boolean);
-            let gal = imgs.length ? `<div class="cw-gal">${imgs.map(s => `<div class="cw-box"><img src="https://achterstem.github.io/host/model.png"><img src="${s}"></div>`).join('')}</div>` : '';
+            let galItems = items.map(c => {
+                let img = c.querySelector('a[href*=".png"]')?.href;
+                if (!img) return null;
+                let t = c.innerText;
+                let daysText = getDaysText(t);
+                let itemKey = `cw_p_${name}_${img}_${t.trim().replace(/\s+/g, '_')}`.replace(/[^\wа-яА-Я]/g, '');
+                let savedPrice = localStorage.getItem(itemKey) || '';
+
+                return {
+                    html: `<div class="cw-gal-item">
+                        <div class="cw-box"><img src="https://achterstem.github.io/host/model.png"><img src="${img}"></div>
+                        ${daysText ? `<div class="cw-days">${daysText}</div>` : ''}
+                        <input type="text" class="cw-price-input" data-key="${itemKey}" value="${savedPrice}" placeholder="указать цену">
+                    </div>`
+                };
+            }).filter(Boolean);
+
+            let gal = galItems.length ? `<div class="cw-gal">${galItems.map(x => x.html).join('')}</div>` : '';
 
             let wrap = document.createElement('div');
             wrap.className = 'cw-wrap';
@@ -129,6 +159,13 @@
                 <span class="cw-tooltip">Скопировано</span>
             </h3>
             <div style="display:flex;flex-direction:column;gap:15px;">${gal}<div class="cw-list" style="display:flex;flex-direction:column;"></div></div>`;
+
+            wrap.querySelectorAll('.cw-price-input').forEach(input => {
+                input.oninput = (e) => {
+                    let key = e.target.getAttribute('data-key');
+                    localStorage.setItem(key, e.target.value);
+                };
+            });
 
             let list = wrap.querySelector('.cw-list');
             items.forEach((c, i) => {
