@@ -40,10 +40,6 @@
         "особенность",
         "смена имени",
         "перевод персонажа из Звёздного племени без требований",
-        "свой дизайн в профиль",
-        "музыка в профиль",
-        "личный костюм",
-        "уникальное личное действие",
         "восстановление персонажа без очереди и требований"
     ];
 
@@ -72,7 +68,10 @@
                 .cw-wrap { margin: 15px 0; padding: 12px; background: #c7c5b9c7; color: #000; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1) }
                 .cw-radio { accent-color: #000; filter: grayscale(1); cursor: pointer; margin: 0 4px 0 0; vertical-align: middle; }
                 .cw-radio:checked { filter: grayscale(1) brightness(0) }
-                .cw-hdr { margin: 0 0 10px; font-size: 15px; border-bottom: 1px solid #312f2a; padding-bottom: 5px; cursor: pointer; user-select: none }
+                .cw-hdr { margin: 0 0 10px; font-size: 15px; border-bottom: 1px solid #312f2a; padding-bottom: 5px; display: flex; align-items: center; gap: 8px; user-select: none }
+                .cw-title-text { cursor: pointer; }
+                .cw-copy-btn { background: #312f2a; border: none; cursor: pointer; padding: 4px 6px; border-radius: 4px; display: inline-flex; align-items: center; color: #fff; vertical-align: middle; }
+                .cw-tooltip { margin-left: 2px; font-size: 12px; color: #312f2a; background: #dcd9ce; padding: 2px 6px; border-radius: 4px; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; font-weight: normal; }
                 .cw-gal { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding-bottom: 10px; border-bottom: 1px dashed #979181 }
                 .cw-box { position: relative; width: 100px; height: 150px }
                 .cw-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none }
@@ -120,8 +119,14 @@
 
             let wrap = document.createElement('div');
             wrap.className = 'cw-wrap';
-            wrap.innerHTML = `<h3 class="cw-hdr">▼ ${name} (${items.length})</h3>
-                <div style="display:flex;flex-direction:column;gap:15px;">${gal}<div class="cw-list" style="display:flex;flex-direction:column;"></div></div>`;
+            wrap.innerHTML = `<h3 class="cw-hdr">
+                <span class="cw-title-text">▼ ${name} (${items.length})</span>
+                <button class="cw-copy-btn" title="Скопировать названия моих купонов">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
+                <span class="cw-tooltip">Скопировано</span>
+            </h3>
+            <div style="display:flex;flex-direction:column;gap:15px;">${gal}<div class="cw-list" style="display:flex;flex-direction:column;"></div></div>`;
 
             let list = wrap.querySelector('.cw-list');
             items.forEach((c, i) => {
@@ -132,11 +137,39 @@
                 list.appendChild(d);
             });
 
-            wrap.querySelector('.cw-hdr').onclick = function() {
-                let d = this.nextElementSibling.style, col = d.display === 'none';
-                d.display = col ? 'flex' : 'none';
-                this.innerHTML = (col ? '▼ ' : '▶ ') + `${name} (${items.length})`;
+            let hdrTextSpan = wrap.querySelector('.cw-title-text');
+            let contentDiv = wrap.querySelector('.cw-hdr').nextElementSibling;
+
+            hdrTextSpan.onclick = function() {
+                let col = contentDiv.style.display === 'none';
+                contentDiv.style.display = col ? 'flex' : 'none';
+                hdrTextSpan.innerHTML = (col ? '▼ ' : '▶ ') + `${name} (${items.length})`;
             };
+
+            let copyBtn = wrap.querySelector('.cw-copy-btn');
+            let tooltip = wrap.querySelector('.cw-tooltip');
+            let timeoutId = null;
+
+            copyBtn.onclick = (e) => {
+                e.stopPropagation();
+                let lines = items.map(coupon => {
+                    let clone = coupon.cloneNode(true);
+                    clone.querySelectorAll('.code-text').forEach(el => el.remove());
+                    let cleanText = clone.innerText.trim().replace(/\s+/g, ' ');
+                    return `● ${cleanText}`;
+                });
+
+                navigator.clipboard.writeText(lines.join('\n')).then(() => {
+                    tooltip.style.opacity = '1';
+                    if (timeoutId) clearTimeout(timeoutId);
+                    timeoutId = setTimeout(() => {
+                        tooltip.style.opacity = '0';
+                    }, 1200);
+                }).catch(err => {
+                    console.error('Ошибка копирования: ', err);
+                });
+            };
+
             el.appendChild(wrap);
         }
     };
