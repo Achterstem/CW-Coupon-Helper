@@ -1,0 +1,335 @@
+// ==UserScript==
+// @name         CW: Coupon Helper
+// @namespace    http://tampermonkey.net/
+// @version      1.2.0
+// @description  Сортировка купонов
+// @author       RESSOR
+// @match        http*://*.catwar.net/rabbit*
+// @match        http*://*.catwar.su/rabbit*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=catwar.su
+// @license      MIT
+// @grant        none
+// @run-at       document-end
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const ms = {'янв':0,'фев':1,'мар':2,'апр':3,'мая':4,'июн':5,'июл':6,'авг':7,'сен':8,'окт':9,'ноя':10,'дек':11};
+
+    const coupons = [
+        "костюм",
+        "бафф на статус",
+        "статус с BB-code",
+        "статус без BB-code",
+        "адрес профиля",
+        "возможность отмечать ЛС непрочитанными",
+        "вечное хранение ЛС",
+        "бафф на имя",
+        "код на имя",
+        "смена дизайна",
+        "летающая картинка",
+        "бафф на жевание хвоста",
+        "переворачивание модельки в Игровой",
+        "аватарка до 3.6 мегабайт",
+        "аватарка до 7.2 мегабайт",
+        "уникальный статус онлайна",
+        "покупка дизайна в профиль",
+        "особенность",
+        "смена имени",
+        "свой дизайн в профиль",
+        "музыка в профиль",
+        "личный костюм",
+        "уникальное личное действие",
+        "перевод персонажа из Звёздного племени без требований",
+        "восстановление персонажа без очереди и требований"
+    ];
+
+    let sort = 'end_date';
+    let origCoupons = null;
+
+    const getDur = t => t.includes('бессрочно') ? Infinity : ((t.match(/(\d+)\s*дн/)?.[1]*24||0) + +(t.match(/(\d+)\s*ч/)?.[1]||0) || null);
+    const getEnd = t => {
+        let m = t.match(/(\d{1,2})\s+([а-я]{3})[а-я]*\s+(\d{4})(?:\s+в\s+(\d{1,2}):(\d{2}))?/i);
+        return m && ms[m[2].toLowerCase()] != null ? new Date(m[3], ms[m[2].toLowerCase()], m[1], m[4]||0, m[5]||0).getTime() : null;
+    };
+
+    const getDaysText = t => {
+        if (t.includes('бессрочно')) return 'Бессрочно';
+        let m = t.match(/(\d+)\s*(?:дн[еахй]*|сутк[ами]*)/i);
+        if (m) return `${m[1]} дн.`;
+        let h = t.match(/(\d+)\s*ч(?:ас[аов]*)?/i);
+        if (h) return `${h[1]} ч.`;
+        return '';
+    };
+
+    const getCharacteristicLabel = couponEl => {
+        let img = couponEl.querySelector('img[src*="characteristics/2/"]');
+        if (!img) return '';
+        let n = +(img.getAttribute('src').match(/characteristics\/2\/(\d+)\.png/)?.[1]);
+        if (!n) return '';
+        return n === 15 ? 'Когти' : (n >= 1 && n <= 14 ? `Шрам №${n}` : '');
+    };
+
+    const getDesignPageUrl = couponEl => {
+        let a = couponEl.querySelector('a[href*="/design/"]');
+        return a ? a.href : null;
+    };
+
+    const couponKey = (prefix, text) => `cw_${prefix}_${text.trim().replace(/\s+/g, '_')}`.replace(/[^\wа-яА-Я]/g, '');
+
+    const render = () => {
+        let el = document.querySelector('#coupons'), groups = {};
+        if (!el) return;
+
+        if (!origCoupons) {
+            let found = Array.from(el.querySelectorAll('.coupon'));
+            if (!found.length) return;
+            origCoupons = found;
+        }
+
+        if (!document.getElementById('cw-css')) {
+            const head = document.head || document.documentElement;
+            head.insertAdjacentHTML('beforeend', `<style id="cw-css">
+                .cw-wrap { margin: 15px 0; padding: 12px; background: #c7c5b9c7; color: #000; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1) }
+                .cw-radio { accent-color: #000; filter: grayscale(1); cursor: pointer; margin: 0 4px 0 0; vertical-align: middle; }
+                .cw-radio:checked { filter: grayscale(1) brightness(0) }
+                .cw-hdr { margin: 0 0 10px; font-size: 15px; border-bottom: 1px solid #312f2a; padding-bottom: 5px; display: flex; align-items: center; gap: 8px; user-select: none }
+                .cw-title-text { cursor: pointer; }
+                .cw-copy-btn { background: #312f2a; border: none; cursor: pointer; padding: 4px 6px; border-radius: 4px; display: inline-flex; align-items: center; color: #fff; vertical-align: middle; }
+                .cw-tooltip { margin-left: 2px; font-size: 12px; color: #312f2a; background: #dcd9ce; padding: 2px 6px; border-radius: 4px; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; font-weight: normal; }
+                .cw-gal { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; padding-bottom: 10px; border-bottom: 1px dashed #979181 }
+                .cw-gal-item { display: flex; flex-direction: column; align-items: center; width: 100px; gap: 4px; }
+                .cw-box { position: relative; width: 100px; height: 130px }
+                .cw-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none }
+                .cw-days { font-size: 11px; font-weight: bold; color: #312f2a; text-align: center; white-space: nowrap; }
+                .cw-price-input { width: 100%; box-sizing: border-box; padding: 3px 6px; font-size: 11px; border: none !important; border-radius: 8px; background: #312f2a !important; color: #fff !important; text-align: center; outline: none !important; box-shadow: none !important; }
+                .cw-price-input:hover, .cw-price-input:focus, .cw-price-input:active { border: none !important; outline: none !important; box-shadow: none !important; background: #312f2a !important; color: #fff !important; }
+                .cw-price-input::placeholder { color: #aaa; font-style: italic; }
+                .cw-list hr { border: none; border-top: 1px solid #979181; margin: 4px 0 6px }
+                .cw-lbl { cursor: pointer; display: inline-flex; align-items: center; color: #000 }
+                .cw-row { display: flex; align-items: flex-start; gap: 8px; }
+                .cw-hide-x { margin-top: 2px; cursor: pointer; flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: #312f2a; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: bold; line-height: 1; user-select: none; transition: background 0.15s ease; }
+                .cw-hide-x:hover { background: #4a473f; }
+                .cw-hide-x.cw-active { background: #7a0d0d; }
+                .cw-row.cw-hidden > div:last-child { opacity: 0.2; }
+                .cw-gal-item.cw-hidden { display: none; }
+                .cw-design-preview { margin-top: 6px; width: 256px; height: 175px; overflow: hidden; border-radius: 4px; border: 1px solid #979181; position: relative; }
+                .cw-design-preview iframe { width: 1280px; height: 875px; border: none; display: block; transform: scale(0.2); transform-origin: top left; pointer-events: none; }
+                .cw-design-placeholder { display: flex; align-items: center; justify-content: center; background: #dcd9ce; cursor: pointer; transition: background 0.15s ease; }
+                .cw-design-placeholder:hover { background: #cfccbf; }
+                .cw-design-play { width: 40px; height: 40px; border-radius: 50%; background: #312f2a; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+                .cw-design-loading { font-size: 11px; color: #666; font-style: italic; }
+                .cw-expiry-warning { display: inline-block; font-weight: bold; color: #fff; padding: 1px 6px; border-radius: 4px; font-size: 11px; vertical-align: middle; }
+                .cw-expiry-warning.cw-warn-month { background: #6d491d; }
+                .cw-expiry-warning.cw-warn-week { background: #830b0b; }
+            </style>`);
+
+            el.insertAdjacentHTML('beforebegin', `
+                <div class="cw-wrap" style="display:flex;gap:15px;align-items:center;flex-wrap:wrap;font:13px sans-serif">
+                    <b>Сортировка:</b>
+                    ${[['end_date','По дате окончания',1], ['duration','По длительности'], ['name','По названию']]
+                        .map(([v, n, c]) => `<label class="cw-lbl"><input type="radio" name="cSort" class="cw-radio" value="${v}" ${c?'checked':''}>${n}</label>`).join('')}
+                    <button id="cw-toggle-all" class="cw-copy-btn" style="margin-left:auto;">${localStorage.getItem('cw_all_collapsed') === '1' ? 'Показать купоны' : 'Скрыть купоны'}</button>
+                </div>`);
+            document.querySelectorAll('input[name="cSort"]').forEach(r => r.onchange = e => { sort = e.target.value; render(); });
+            document.getElementById('cw-toggle-all').onclick = () => {
+                let nowCollapsed = localStorage.getItem('cw_all_collapsed') !== '1';
+                if (nowCollapsed) localStorage.setItem('cw_all_collapsed', '1');
+                else localStorage.removeItem('cw_all_collapsed');
+                el.style.display = nowCollapsed ? 'none' : '';
+                document.getElementById('cw-toggle-all').textContent = nowCollapsed ? 'Показать купоны' : 'Скрыть купоны';
+            };
+        }
+
+        coupons.concat("Без категории").forEach(c => groups[c] = []);
+        let now = Date.now();
+        const WEEK = 6048e5;  // 7 дней
+        const MONTH = 2592e6; // 30 дней
+
+        el.style.display = localStorage.getItem('cw_all_collapsed') === '1' ? 'none' : '';
+
+        origCoupons.forEach(c => {
+            let t = c.innerText, end = getEnd(t), dur = getDur(t);
+            let left = end != null ? end - now : null;
+
+            let urgency = null;
+            let warningText = null;
+            if (left != null && left > 0) {
+                if (left < WEEK) { urgency = 'week'; warningText = "<недели"; }
+                else if (left < MONTH) { urgency = 'month'; warningText = "<месяца"; }
+            }
+            if (urgency) c.dataset.urgency = urgency;
+            if (warningText && !c.querySelector('.cw-expiry-warning')) {
+                c.insertAdjacentHTML('beforeend', ` <span class="cw-expiry-warning cw-warn-${urgency}">${warningText}</span>`);
+            }
+            c.querySelector('.coupon-preview-img')?.remove();
+            groups[coupons.find(x => t.toLowerCase().includes(x.toLowerCase())) || "Без категории"].push(c);
+        });
+
+        el.innerHTML = '';
+
+        for (let name in groups) {
+            let items = groups[name];
+            if (!items.length) continue;
+
+            items.sort((a, b) => {
+                let ta = a.innerText, tb = b.innerText;
+                if (sort === 'end_date') return (getEnd(ta) || Infinity) - (getEnd(tb) || Infinity);
+                if (sort === 'duration') return (getDur(ta) ?? Infinity) - (getDur(tb) ?? Infinity);
+                let na = (ta.match(/«([^»]+)»/)?.[1]||ta).trim(), nb = (tb.match(/«([^»]+)»/)?.[1]||tb).trim();
+                return na.localeCompare(nb) || (getEnd(ta) || Infinity) - (getEnd(tb) || Infinity);
+            });
+
+            let galItems = items.map(c => {
+                let img = c.querySelector('a[href*=".png"]')?.href;
+                if (!img) return null;
+                let t = c.innerText;
+                let daysText = getDaysText(t);
+                let charLabel = getCharacteristicLabel(c);
+                let itemKey = couponKey(`p_${name}_${img}`, t);
+                let savedPrice = localStorage.getItem(itemKey) || '';
+                let hiddenKey = couponKey('hidden', t);
+                let isHidden = localStorage.getItem(hiddenKey) === '1';
+
+                return {
+                    hiddenKey,
+                    html: `<div class="cw-gal-item${isHidden ? ' cw-hidden' : ''}" data-hidden-key="${hiddenKey}">
+                        <div class="cw-box"><img src="https://achterstem.github.io/host/model.png"><img src="${img}"></div>
+                        ${charLabel ? `<div class="cw-days">${charLabel}</div>` : (daysText ? `<div class="cw-days">${daysText}</div>` : '')}
+                        <input type="text" class="cw-price-input" data-key="${itemKey}" value="${savedPrice}" placeholder="указать цену">
+                    </div>`
+                };
+            }).filter(Boolean);
+
+            let gal = galItems.length ? `<div class="cw-gal">${galItems.map(x => x.html).join('')}</div>` : '';
+
+            let wrap = document.createElement('div');
+            wrap.className = 'cw-wrap';
+            let collapsedKey = couponKey('collapsed', name);
+            let isCollapsed = localStorage.getItem(collapsedKey) === '1';
+            wrap.innerHTML = `<h3 class="cw-hdr">
+                <span class="cw-title-text">${isCollapsed ? '▶' : '▼'} ${name} (${items.length})</span>
+                <button class="cw-copy-btn" title="Скопировать названия моих купонов">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
+                <span class="cw-tooltip">Скопировано</span>
+            </h3>
+            <div style="display:${isCollapsed ? 'none' : 'flex'};flex-direction:column;gap:15px;">${gal}<div class="cw-list" style="display:flex;flex-direction:column;"></div></div>`;
+
+            wrap.querySelectorAll('.cw-price-input').forEach(input => {
+                input.oninput = (e) => {
+                    let key = e.target.getAttribute('data-key');
+                    localStorage.setItem(key, e.target.value);
+                };
+            });
+
+            let list = wrap.querySelector('.cw-list');
+            items.forEach((c, i) => {
+                if (i > 0) list.appendChild(document.createElement('hr'));
+
+                let hiddenKey = couponKey('hidden', c.innerText);
+                let isHidden = localStorage.getItem(hiddenKey) === '1';
+
+                let charLabel = getCharacteristicLabel(c);
+                if (charLabel) {
+                    let target = Array.from(c.querySelectorAll('div')).find(d => /особенность:\s*шрам или особенность/i.test(d.textContent) && d.children.length === 0);
+                    if (target) target.textContent = target.textContent.replace(/особенность:\s*шрам или особенность/i, charLabel);
+                }
+
+                let designPageUrl = getDesignPageUrl(c);
+                if (designPageUrl && !c.querySelector('.cw-design-preview')) {
+                    let previewBox = document.createElement('div');
+                    previewBox.className = 'cw-design-preview cw-design-placeholder';
+                    previewBox.innerHTML = `<div class="cw-design-play" title="Показать превью дизайна">▶</div>`;
+                    previewBox.onclick = () => {
+                        previewBox.classList.remove('cw-design-placeholder');
+                        previewBox.innerHTML = `<iframe src="${designPageUrl}" loading="lazy" scrolling="no"></iframe>`;
+                    };
+                    c.appendChild(previewBox);
+                }
+
+                let row = document.createElement('div');
+                let urgency = c.dataset.urgency;
+                row.className = 'cw-row' + (isHidden ? ' cw-hidden' : '');
+
+                let xBtn = document.createElement('div');
+                xBtn.className = 'cw-hide-x' + (isHidden ? ' cw-active' : '');
+                xBtn.textContent = '✕';
+                xBtn.title = 'Скрыть купон';
+                xBtn.onclick = () => {
+                    let nowHidden = !row.classList.contains('cw-hidden');
+                    let galItem = wrap.querySelector(`.cw-gal-item[data-hidden-key="${hiddenKey}"]`);
+                    if (nowHidden) {
+                        localStorage.setItem(hiddenKey, '1');
+                        row.classList.add('cw-hidden');
+                        xBtn.classList.add('cw-active');
+                        galItem?.classList.add('cw-hidden');
+                    } else {
+                        localStorage.removeItem(hiddenKey);
+                        row.classList.remove('cw-hidden');
+                        xBtn.classList.remove('cw-active');
+                        galItem?.classList.remove('cw-hidden');
+                    }
+                };
+
+                let d = document.createElement('div');
+                d.style.cssText = "display:flex;flex-direction:column;justify-content:center;flex:1;";
+                d.appendChild(c);
+
+                row.appendChild(xBtn);
+                row.appendChild(d);
+                list.appendChild(row);
+            });
+
+            let hdrTextSpan = wrap.querySelector('.cw-title-text');
+            let contentDiv = wrap.querySelector('.cw-hdr').nextElementSibling;
+
+            hdrTextSpan.onclick = function() {
+                let col = contentDiv.style.display === 'none';
+                contentDiv.style.display = col ? 'flex' : 'none';
+                hdrTextSpan.innerHTML = (col ? '▼ ' : '▶ ') + `${name} (${items.length})`;
+                if (col) localStorage.removeItem(collapsedKey);
+                else localStorage.setItem(collapsedKey, '1');
+            };
+
+            let copyBtn = wrap.querySelector('.cw-copy-btn');
+            let tooltip = wrap.querySelector('.cw-tooltip');
+            let timeoutId = null;
+
+            copyBtn.onclick = (e) => {
+                e.stopPropagation();
+                let lines = items.map(coupon => {
+                    let clone = coupon.cloneNode(true);
+                    clone.querySelectorAll('.code-text').forEach(el => el.remove());
+                    let cleanText = clone.innerText.trim().replace(/\s+/g, ' ');
+                    return `● ${cleanText}`;
+                });
+
+                navigator.clipboard.writeText(lines.join('\n')).then(() => {
+                    tooltip.style.opacity = '1';
+                    if (timeoutId) clearTimeout(timeoutId);
+                    timeoutId = setTimeout(() => {
+                        tooltip.style.opacity = '0';
+                    }, 1200);
+                }).catch(err => {
+                    console.error('Ошибка копирования: ', err);
+                });
+            };
+
+            el.appendChild(wrap);
+        }
+    };
+
+    setTimeout(render, 800);
+
+    let url = location.href;
+    new MutationObserver(() => {
+        if (location.href !== url) {
+            url = location.href;
+            origCoupons = null;
+            setTimeout(render, 800);
+        }
+    }).observe(document, { subtree: true, childList: true });
+
+})();
